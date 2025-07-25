@@ -9,8 +9,8 @@ import (
 func TestNewModel(t *testing.T) {
 	model := NewModel()
 	
-	if len(model.choices) == 0 {
-		t.Error("Expected choices to be populated")
+	if len(model.menuItems) == 0 {
+		t.Error("Expected menuItems to be populated")
 	}
 	
 	if model.cursor != 0 {
@@ -19,6 +19,10 @@ func TestNewModel(t *testing.T) {
 	
 	if model.selected == nil {
 		t.Error("Expected selected map to be initialized")
+	}
+	
+	if model.showingHelp != false {
+		t.Error("Expected showingHelp to be false initially")
 	}
 }
 
@@ -32,6 +36,15 @@ func TestModelUpdate(t *testing.T) {
 	
 	if m.cursor != 1 {
 		t.Errorf("Expected cursor to be 1, got %d", m.cursor)
+	}
+	
+	// Test help functionality
+	msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}
+	updatedModel, _ = model.Update(msg)
+	m = updatedModel.(Model)
+	
+	if !m.showingHelp {
+		t.Error("Expected showingHelp to be true after pressing ?")
 	}
 	
 	// Test quit
