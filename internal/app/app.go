@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"ai-context-cli/internal/feedback"
+	"ai-context-cli/internal/navigation"
 )
 
 type MenuItem struct {
@@ -29,6 +30,11 @@ type Model struct {
 	progress     feedback.ProgressModel
 	toastManager feedback.ToastManager
 	loadingState LoadingState
+	
+	// Navigation system
+	navStack     navigation.NavigationStack
+	navRenderer  navigation.NavigationRenderer
+	currentScreen string
 }
 
 // LoadingState represents different loading states
@@ -102,6 +108,9 @@ func NewModel() Model {
 		progress:     feedback.NewProgress(0, ""),
 		toastManager: feedback.NewToastManager(),
 		loadingState: StateMenu,
+		navStack:     navigation.NewNavigationStack().Push(navigation.MainMenuScreen),
+		navRenderer:  navigation.NewNavigationRenderer(),
+		currentScreen: "main_menu",
 	}
 }
 
@@ -169,6 +178,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.showingHelp {
 				m.showingHelp = false
 				m.helpForItem = -1
+				return m, nil
+			}
+			
+			// Handle navigation back
+			if m.loadingState == StateMenu && m.navStack.CanGoBack() {
+				navStack, success := m.navStack.Pop()
+				if success {
+					m.navStack = navStack
+					if current, ok := m.navStack.Current(); ok {
+						m.currentScreen = current.ID
+						// Show toast for navigation
+						toastManager, toastCmd := m.toastManager.AddToast("Returned to "+current.Title, feedback.ToastInfo)
+						m.toastManager = toastManager
+						return m, toastCmd
+					}
+				}
 			}
 			return m, nil
 		case "up", "k":
@@ -203,6 +228,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loadingState = StateMenu
 			m.spinner = m.spinner.Stop()
 			m.progress = feedback.NewProgress(0, "")
+			// Reset navigation to main menu
+			m.navStack = navigation.NewNavigationStack().Push(navigation.MainMenuScreen)
+			m.currentScreen = "main_menu"
 		}
 	}
 	
@@ -213,6 +241,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) handleMenuAction(index int) (Model, tea.Cmd) {
 	switch index {
 	case 0: // Add Context (All)
+		// Navigate to Add Context All screen
+		m.navStack = m.navStack.Push(navigation.AddContextAllScreen)
+		m.currentScreen = "add_context_all"
 		m.loadingState = StateScanning
 		m.spinner = m.spinner.SetMessage("Scanning project files...").Start()
 		m.progress = feedback.NewProgress(100, "Adding context to all files")
@@ -221,6 +252,9 @@ func (m Model) handleMenuAction(index int) (Model, tea.Cmd) {
 			m.simulateFileScanning(),
 		)
 	case 1: // Add Context (Folder)
+		// Navigate to Add Context Folder screen
+		m.navStack = m.navStack.Push(navigation.AddContextFolderScreen)
+		m.currentScreen = "add_context_folder"
 		m.loadingState = StateScanning
 		m.spinner = m.spinner.SetMessage("Selecting folder...").Start()
 		m.progress = feedback.NewProgress(50, "Adding context to folder")
@@ -229,6 +263,9 @@ func (m Model) handleMenuAction(index int) (Model, tea.Cmd) {
 			m.simulateFolderSelection(),
 		)
 	case 2: // Context Before
+		// Navigate to Context Preview screen
+		m.navStack = m.navStack.Push(navigation.ContextPreviewScreen)
+		m.currentScreen = "context_preview"
 		m.loadingState = StateProcessing
 		m.spinner = m.spinner.SetMessage("Preparing context preview...").Start()
 		return m, tea.Batch(
@@ -236,6 +273,9 @@ func (m Model) handleMenuAction(index int) (Model, tea.Cmd) {
 			m.simulateContextPreview(),
 		)
 	case 3: // Select Model
+		// Navigate to Model Selection screen
+		m.navStack = m.navStack.Push(navigation.ModelSelectionScreen)
+		m.currentScreen = "model_selection"
 		m.loadingState = StateProcessing
 		m.spinner = m.spinner.SetMessage("Loading available models...").Start()
 		return m, tea.Batch(
@@ -392,7 +432,15 @@ func (m Model) createHelpModal(item MenuItem) string {
 func (m Model) View() string {
 	var result strings.Builder
 	
-	// Always show toasts at the top
+	// Always show navigation at the top
+	navView := m.navRenderer.RenderFullNavigation(m.navStack)
+	if navView != "" {
+		centeredNav := m.navRenderer.CenterNavigation(navView, 100)
+		result.WriteString(centeredNav)
+		result.WriteString("\n\n")
+	}
+	
+	// Always show toasts after navigation
 	if toastView := m.toastManager.View(); toastView != "" {
 		centeredToast := centerText(toastView, 100)
 		result.WriteString(centeredToast)
@@ -463,12 +511,16 @@ func (m Model) renderLoadingView() string {
 		result.WriteString("\n\n")
 	}
 	
-	// Loading instructions
+	// Loading instructions with navigation hint
 	instructionStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#6B7280")).
 		Italic(true)
 	
-	instructions := "⏳ Loading... Press Ctrl+C to cancel"
+	instructions := "⏳ Loading... "
+	if m.navStack.CanGoBack() {
+		instructions += "ESC: Back • "
+	}
+	instructions += "Ctrl+C: Cancel"
 	centeredInstructions := centerText(instructionStyle.Render(instructions), 100)
 	result.WriteString(centeredInstructions)
 	
@@ -508,12 +560,16 @@ func (m Model) renderBaseView() string {
 		result.WriteString("\n") // Single line spacing between buttons
 	}
 	
-	// Add compact instructions
+	// Add compact instructions with navigation
 	instructionStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#6B7280")).
 		Italic(true)
 	
-	instructions := "↑↓/jk: navigate • Enter: select • ?: help • q: quit"
+	instructions := "↑↓/jk: navigate • Enter: select • ?: help"
+	if m.navStack.CanGoBack() {
+		instructions += " • ESC: back"
+	}
+	instructions += " • q: quit"
 	centeredInstructions := centerText(instructionStyle.Render(instructions), 100)
 	result.WriteString("\n")
 	result.WriteString(centeredInstructions)
