@@ -2,11 +2,13 @@ package app
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"ai-context-cli/internal/context"
 	"ai-context-cli/internal/feedback"
 	"ai-context-cli/internal/navigation"
 )
@@ -35,6 +37,12 @@ type Model struct {
 	navStack     navigation.NavigationStack
 	navRenderer  navigation.NavigationRenderer
 	currentScreen string
+	
+	// Context system
+	scanner      *context.ProjectScanner
+	scanResult   *context.ScanResult
+	contextResult *context.ContextResult
+	showingResult bool
 }
 
 // LoadingState represents different loading states
@@ -65,6 +73,23 @@ type ProgressUpdateMsg struct {
 type OperationCompleteMsg struct {
 	Success bool
 	Message string
+}
+
+// ScanProgressMsg is sent during real project scanning
+type ScanProgressMsg struct {
+	Progress context.ScanProgress
+}
+
+// ScanCompleteMsg is sent when scanning completes
+type ScanCompleteMsg struct {
+	Result *context.ScanResult
+	Error  error
+}
+
+// ContextGeneratedMsg is sent when context generation completes
+type ContextGeneratedMsg struct {
+	Result *context.ContextResult
+	Error  error
 }
 
 func NewModel() Model {
@@ -136,6 +161,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	
 	switch msg := msg.(type) {
+	case ScanProgressMsg:
+		return m.handleScanProgress(msg)
+	case ScanCompleteMsg:
+		return m.handleScanComplete(msg)
+	case ContextGeneratedMsg:
+		return m.handleContextGenerated(msg)
 	case SimulateOperationMsg:
 		return m.handleSimulateOperation(msg)
 	case ProgressUpdateMsg:
@@ -237,6 +268,148 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// handleScanProgress handles real scan progress updates
+func (m Model) handleScanProgress(msg ScanProgressMsg) (Model, tea.Cmd) {
+	progress := msg.Progress
+	
+	// Update spinner message
+	m.spinner = m.spinner.SetMessage(progress.CurrentPhase)
+	
+	// Update progress bar
+	if progress.TotalEstimated > 0 {
+		m.progress = m.progress.SetProgress(progress.ProcessedFiles).
+			SetMessage(fmt.Sprintf("%s (%d/%d files)", 
+				progress.CurrentPhase, progress.ProcessedFiles, progress.TotalEstimated))
+		
+		// Update total if we have better estimate
+		if progress.TotalEstimated > 0 {
+			m.progress = feedback.NewProgress(progress.TotalEstimated, "Scanning files")
+			m.progress = m.progress.SetProgress(progress.ProcessedFiles)
+		}
+	}
+	
+	return m, nil
+}
+
+// handleScanComplete handles scan completion
+func (m Model) handleScanComplete(msg ScanCompleteMsg) (Model, tea.Cmd) {
+	if msg.Error != nil {
+		m.loadingState = StateComplete
+		m.spinner = m.spinner.Stop()
+		
+		toastManager, toastCmd := m.toastManager.AddToast(
+			fmt.Sprintf("Scan failed: %v", msg.Error), feedback.ToastError)
+		m.toastManager = toastManager
+		
+		return m, tea.Batch(toastCmd, m.resetToMenuAfterDelay())
+	}
+	
+	// Store scan result and start context generation
+	m.scanResult = msg.Result
+	m.loadingState = StateProcessing
+	m.spinner = m.spinner.SetMessage("Generating comprehensive context...").Start()
+	m.progress = feedback.NewProgress(0, "Processing scan results")
+	
+	toastManager, toastCmd := m.toastManager.AddToast(
+		fmt.Sprintf("Scanned %d files in %v", msg.Result.TotalFiles, msg.Result.ScanDuration.Round(time.Millisecond)), 
+		feedback.ToastSuccess)
+	m.toastManager = toastManager
+	
+	return m, tea.Batch(toastCmd, m.generateContext())
+}
+
+// handleContextGenerated handles context generation completion
+func (m Model) handleContextGenerated(msg ContextGeneratedMsg) (Model, tea.Cmd) {
+	if msg.Error != nil {
+		m.loadingState = StateComplete
+		m.spinner = m.spinner.Stop()
+		
+		toastManager, toastCmd := m.toastManager.AddToast(
+			fmt.Sprintf("Context generation failed: %v", msg.Error), feedback.ToastError)
+		m.toastManager = toastManager
+		
+		return m, tea.Batch(toastCmd, m.resetToMenuAfterDelay())
+	}
+	
+	// Store context result and show success
+	m.contextResult = msg.Result
+	m.loadingState = StateComplete
+	m.spinner = m.spinner.Stop()
+	m.showingResult = true
+	
+	toastManager, toastCmd := m.toastManager.AddToast(
+		fmt.Sprintf("Context generated! %d sections, ~%d tokens", 
+			len(msg.Result.Sections), msg.Result.TokenEstimate), 
+		feedback.ToastSuccess)
+	m.toastManager = toastManager
+	
+	return m, toastCmd
+}
+
+// startProjectScan starts a real project scan
+func (m Model) startProjectScan() tea.Cmd {
+	return func() tea.Msg {
+		// Get current working directory
+		wd, err := os.Getwd()
+		if err != nil {
+			return ScanCompleteMsg{Error: fmt.Errorf("failed to get working directory: %w", err)}
+		}
+		
+		// Create scanner with default config
+		config := context.DefaultScanConfig(wd)
+		scanner := context.NewProjectScanner(config)
+		
+		// Start progress monitoring in a goroutine
+		progressChan := scanner.GetProgressChannel()
+		go func() {
+			for progress := range progressChan {
+				// Send progress updates to the main loop
+				// Note: In a real implementation, you'd want to use a proper
+				// channel or callback mechanism here
+				_ = progress
+			}
+		}()
+		
+		// Perform the scan
+		result, err := scanner.Scan()
+		if err != nil {
+			return ScanCompleteMsg{Error: err}
+		}
+		
+		return ScanCompleteMsg{Result: result}
+	}
+}
+
+// generateContext generates context from scan results
+func (m Model) generateContext() tea.Cmd {
+	return func() tea.Msg {
+		if m.scanResult == nil {
+			return ContextGeneratedMsg{Error: fmt.Errorf("no scan result available")}
+		}
+		
+		// Create context generator
+		generator := context.NewContextGenerator()
+		
+		// Get project name from current directory
+		wd, _ := os.Getwd()
+		projectName := "Project"
+		if wd != "" {
+			projectName = strings.TrimSuffix(wd, "/")
+			if idx := strings.LastIndex(projectName, "/"); idx >= 0 {
+				projectName = projectName[idx+1:]
+			}
+		}
+		
+		// Generate context
+		result, err := generator.GenerateContext(m.scanResult, projectName)
+		if err != nil {
+			return ContextGeneratedMsg{Error: err}
+		}
+		
+		return ContextGeneratedMsg{Result: result}
+	}
+}
+
 // handleMenuAction processes menu item selection
 func (m Model) handleMenuAction(index int) (Model, tea.Cmd) {
 	switch index {
@@ -245,11 +418,14 @@ func (m Model) handleMenuAction(index int) (Model, tea.Cmd) {
 		m.navStack = m.navStack.Push(navigation.AddContextAllScreen)
 		m.currentScreen = "add_context_all"
 		m.loadingState = StateScanning
-		m.spinner = m.spinner.SetMessage("Scanning project files...").Start()
-		m.progress = feedback.NewProgress(100, "Adding context to all files")
+		m.spinner = m.spinner.SetMessage("Initializing project scan...").Start()
+		m.progress = feedback.NewProgress(0, "Scanning project files")
+		m.showingResult = false
+		
+		// Start real project scanning
 		return m, tea.Batch(
 			m.spinner.InitSpinner(),
-			m.simulateFileScanning(),
+			m.startProjectScan(),
 		)
 	case 1: // Add Context (Folder)
 		// Navigate to Add Context Folder screen
@@ -465,6 +641,11 @@ func (m Model) View() string {
 		return result.String()
 	}
 	
+	// Show result view if available
+	if m.showingResult && m.contextResult != nil {
+		return result.String() + m.renderResultView()
+	}
+	
 	// Show loading state interface
 	if m.loadingState != StateMenu {
 		return result.String() + m.renderLoadingView()
@@ -572,6 +753,115 @@ func (m Model) renderBaseView() string {
 	instructions += " • q: quit"
 	centeredInstructions := centerText(instructionStyle.Render(instructions), 100)
 	result.WriteString("\n")
+	result.WriteString(centeredInstructions)
+	
+	return result.String()
+}
+
+// renderResultView renders the context generation results
+func (m Model) renderResultView() string {
+	var result strings.Builder
+	
+	// Compact banner
+	bannerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#7D56F4")).
+		Align(lipgloss.Center)
+	
+	compactBanner := []string{
+		"╔═══════════════════════════╗",
+		"║      Context Engine       ║", 
+		"╚═══════════════════════════╝",
+	}
+	
+	for _, line := range compactBanner {
+		centeredLine := centerText(bannerStyle.Render(line), 100)
+		result.WriteString(centeredLine)
+		result.WriteString("\n")
+	}
+	result.WriteString("\n")
+	
+	// Context Results Title
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#10B981")).
+		Align(lipgloss.Center)
+	
+	title := fmt.Sprintf("✨ Context Generated Successfully! ✨")
+	centeredTitle := centerText(titleStyle.Render(title), 100)
+	result.WriteString(centeredTitle)
+	result.WriteString("\n\n")
+	
+	// Summary statistics
+	summaryBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#10B981")).
+		Padding(1, 2).
+		Width(60).
+		Align(lipgloss.Center)
+	
+	var summaryContent strings.Builder
+	summaryContent.WriteString(fmt.Sprintf("📁 Project: %s\n", m.contextResult.ProjectName))
+	summaryContent.WriteString(fmt.Sprintf("📊 Files Processed: %d\n", m.contextResult.TotalFiles))
+	summaryContent.WriteString(fmt.Sprintf("📄 Total Size: %s\n", context.FormatSize(m.contextResult.TotalSize)))
+	summaryContent.WriteString(fmt.Sprintf("📝 Sections Generated: %d\n", len(m.contextResult.Sections)))
+	summaryContent.WriteString(fmt.Sprintf("🧠 Estimated Tokens: ~%s\n", context.FormatNumber(m.contextResult.TokenEstimate)))
+	summaryContent.WriteString(fmt.Sprintf("⏱️ Generated: %s", m.contextResult.GeneratedAt.Format("15:04:05")))
+	
+	summaryRendered := summaryBox.Render(summaryContent.String())
+	centeredSummary := centerText(summaryRendered, 100)
+	result.WriteString(centeredSummary)
+	result.WriteString("\n\n")
+	
+	// Sections overview
+	if len(m.contextResult.Sections) > 0 {
+		sectionTitle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#3B82F6")).
+			Render("📋 Generated Sections:")
+		
+		centeredSectionTitle := centerText(sectionTitle, 100)
+		result.WriteString(centeredSectionTitle)
+		result.WriteString("\n\n")
+		
+		for i, section := range m.contextResult.Sections {
+			if i >= 5 { // Show first 5 sections
+				moreText := lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#6B7280")).
+					Italic(true).
+					Render(fmt.Sprintf("... and %d more sections", len(m.contextResult.Sections)-5))
+				centeredMore := centerText(moreText, 100)
+				result.WriteString(centeredMore)
+				result.WriteString("\n")
+				break
+			}
+			
+			sectionItem := fmt.Sprintf("• %s", section.Title)
+			if len(section.Files) > 0 {
+				sectionItem += fmt.Sprintf(" (%d files)", len(section.Files))
+			}
+			
+			sectionStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#374151"))
+			
+			centeredSection := centerText(sectionStyle.Render(sectionItem), 100)
+			result.WriteString(centeredSection)
+			result.WriteString("\n")
+		}
+		result.WriteString("\n")
+	}
+	
+	// Instructions
+	instructionStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#6B7280")).
+		Italic(true)
+	
+	instructions := "✨ Context ready for AI interaction!"
+	if m.navStack.CanGoBack() {
+		instructions += " • ESC: back"
+	}
+	instructions += " • q: quit"
+	centeredInstructions := centerText(instructionStyle.Render(instructions), 100)
 	result.WriteString(centeredInstructions)
 	
 	return result.String()
