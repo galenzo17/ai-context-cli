@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"ai-context-cli/internal/ui"
 )
 
 type Model struct {
@@ -16,10 +16,10 @@ type Model struct {
 func NewModel() Model {
 	return Model{
 		choices: []string{
-			"Chat with AI Model",
-			"Context Engineering",
-			"Model Selection",
-			"Settings",
+			"Add Context (All)",
+			"Add Context (Folder)",
+			"Context Before",
+			"Select Model",
 			"Exit",
 		},
 		selected: make(map[int]struct{}),
@@ -60,13 +60,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
-	var style = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#7D56F4")).
-		MarginTop(1).
-		MarginBottom(1)
-
-	s := style.Render("AI Context CLI") + "\n\n"
+	// Render the banner
+	s := ui.RenderBannerDefault()
 
 	for i, choice := range m.choices {
 		cursor := " "
