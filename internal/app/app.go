@@ -488,6 +488,11 @@ func (m Model) handleContextPreview(msg ContextPreviewMsg) (Model, tea.Cmd) {
 		toastManager, toastCmd := m.toastManager.AddToast("Template applied successfully", feedback.ToastSuccess)
 		m.toastManager = toastManager
 		return m, toastCmd
+	case "exit_preview":
+		// Handle exit preview
+		m.showingPreview = false
+		m.contextPreview = nil
+		return m, nil
 	}
 	
 	return m, nil

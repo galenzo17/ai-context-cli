@@ -145,6 +145,9 @@ func (m *ContextPreviewModel) handleKeyPress(msg tea.KeyMsg) (*ContextPreviewMod
 	}
 	
 	switch msg.String() {
+	case "esc":
+		// Exit preview mode
+		return m, m.exitPreview()
 	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--
@@ -477,7 +480,7 @@ func (m *ContextPreviewModel) renderFooter() string {
 	} else if m.templateMode {
 		instructions = "↑↓: select template • Enter: apply • ESC: cancel"
 	} else {
-		instructions = "←→: navigate sections • Enter: toggle full view • E: edit • T: templates • S: save • R: refresh"
+		instructions = "←→: navigate sections • Enter: toggle full view • E: edit • T: templates • S: save • R: refresh • ESC: exit"
 	}
 	
 	result.WriteString(instructionStyle.Render(instructions))
@@ -535,6 +538,16 @@ func (m *ContextPreviewModel) applyTemplate(template ContextTemplate) tea.Cmd {
 		return PreviewMsg{
 			Type: "template_applied",
 			Data: template,
+		}
+	}
+}
+
+// exitPreview exits the preview mode
+func (m *ContextPreviewModel) exitPreview() tea.Cmd {
+	return func() tea.Msg {
+		return PreviewMsg{
+			Type: "exit_preview",
+			Data: nil,
 		}
 	}
 }
