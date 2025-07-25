@@ -18,8 +18,8 @@ func TestRenderBanner(t *testing.T) {
 		t.Error("Expected banner to return non-empty string")
 	}
 
-	if !strings.Contains(banner, "CONTEXT ENGINE") {
-		t.Error("Expected banner to contain title")
+	if !strings.Contains(banner, "___ ___") {
+		t.Error("Expected banner to contain ASCII art")
 	}
 
 	if !strings.Contains(banner, "v0.1.0") {

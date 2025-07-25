@@ -12,9 +12,16 @@ const version = "v0.1.0"
 
 var logoArt = []string{
 	"╔═══════════════════════════════════════════════════╗",
+	"║  ___ ___  _  _ _____ _____  _______   ___ _  _     ║",
+	"║ / __/ _ \\| \\| |_   _| __\\ \\/ /_   _| | __| \\| |    ║",
+	"║| (_| (_) | .` | | | | _| >  <  | |   | _|| .` |    ║",
+	"║ \\___\\___/|_|\\_| |_| |___/_/\\_\\ |_|   |___|_|\\_|    ║",
 	"║                                                   ║",
-	"║                 CONTEXT ENGINE                    ║",
-	"║                                                   ║",
+	"║  ___ _  _ ___ _  _ ___                             ║", 
+	"║ | __| \\| / __| || | __|                            ║",
+	"║ | _|| .` | (_ | || | _|                            ║",
+	"║ |___|_|\\_|\\___|\\_, |___|                           ║",
+	"║                |__/                               ║",
 	"╚═══════════════════════════════════════════════════╝",
 }
 
@@ -49,17 +56,24 @@ func RenderBanner(config BannerConfig) string {
 		config.Width = GetTerminalWidth()
 	}
 
-	// Create gradient colors
-	primaryColor := lipgloss.Color("#7D56F4")   // Purple
-	accentColor := lipgloss.Color("#10B981")    // Green
+	// Create gradient colors - violet to blue to cyan
+	gradientColors := []lipgloss.Color{
+		lipgloss.Color("#8B5CF6"), // Violet
+		lipgloss.Color("#7C3AED"), // Purple  
+		lipgloss.Color("#6366F1"), // Indigo
+		lipgloss.Color("#3B82F6"), // Blue
+		lipgloss.Color("#0EA5E9"), // Sky blue
+		lipgloss.Color("#06B6D4"), // Cyan
+		lipgloss.Color("#14B8A6"), // Teal
+	}
 
-	// Create styles
-	logoStyle := lipgloss.NewStyle().
-		Foreground(primaryColor).
+	// Create styles for different parts
+	borderStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#6366F1")).
 		Bold(true)
-
+	
 	versionStyle := lipgloss.NewStyle().
-		Foreground(accentColor).
+		Foreground(lipgloss.Color("#10B981")).
 		Italic(true)
 
 	// Check if terminal is wide enough for full logo
@@ -72,18 +86,37 @@ func RenderBanner(config BannerConfig) string {
 			"╚═══════════════════════════╝",
 		}
 		
-		for _, line := range compactLogo {
-			centeredLine := centerText(logoStyle.Render(line), config.Width)
+		for i, line := range compactLogo {
+			// Use gradient colors for compact version too
+			colorIndex := i % len(gradientColors)
+			compactStyle := lipgloss.NewStyle().
+				Foreground(gradientColors[colorIndex]).
+				Bold(true)
+			centeredLine := centerText(compactStyle.Render(line), config.Width)
 			result.WriteString(centeredLine + "\n")
 		}
 	} else {
-		// Render full ASCII art logo
-		for _, line := range logoArt {
+		// Render full ASCII art logo with gradient colors
+		for i, line := range logoArt {
 			if line == "" {
 				result.WriteString("\n")
 				continue
 			}
-			centeredLine := centerText(logoStyle.Render(line), config.Width)
+			
+			// Apply different colors based on line position
+			var lineStyle lipgloss.Style
+			if i == 0 || i == len(logoArt)-1 {
+				// Border lines use border style
+				lineStyle = borderStyle
+			} else {
+				// Content lines use gradient colors
+				colorIndex := (i - 1) % len(gradientColors)
+				lineStyle = lipgloss.NewStyle().
+					Foreground(gradientColors[colorIndex]).
+					Bold(true)
+			}
+			
+			centeredLine := centerText(lineStyle.Render(line), config.Width)
 			result.WriteString(centeredLine + "\n")
 		}
 	}
