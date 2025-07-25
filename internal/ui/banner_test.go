@@ -25,10 +25,6 @@ func TestRenderBanner(t *testing.T) {
 	if !strings.Contains(banner, "v0.1.0") {
 		t.Error("Expected banner to contain version when ShowVersion is true")
 	}
-
-	if !strings.Contains(banner, "Advanced Context Engineering") {
-		t.Error("Expected banner to contain subtitle")
-	}
 }
 
 func TestRenderBannerCompact(t *testing.T) {
@@ -45,7 +41,7 @@ func TestRenderBannerCompact(t *testing.T) {
 	}
 
 	// Should use compact layout for narrow terminals
-	if !strings.Contains(banner, "AI CONTEXT CLI") {
+	if !strings.Contains(banner, "Advanced Context Engine") {
 		t.Error("Expected compact banner to contain title")
 	}
 }

@@ -11,19 +11,26 @@ import (
 const version = "v0.1.0"
 
 var logoArt = []string{
-	"    █████╗ ██╗     ██████╗ ██████╗ ███╗   ██╗████████╗███████╗██╗  ██╗████████╗",
-	"   ██╔══██╗██║    ██╔════╝██╔═══██╗████╗  ██║╚══██╔══╝██╔════╝╚██╗██╔╝╚══██╔══╝",
-	"   ███████║██║    ██║     ██║   ██║██╔██╗ ██║   ██║   █████╗   ╚███╔╝    ██║   ",
-	"   ██╔══██║██║    ██║     ██║   ██║██║╚██╗██║   ██║   ██╔══╝   ██╔██╗    ██║   ",
-	"   ██║  ██║██║    ╚██████╗╚██████╔╝██║ ╚████║   ██║   ███████╗██╔╝ ██╗   ██║   ",
-	"   ╚═╝  ╚═╝╚═╝     ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═╝  ╚═╝   ╚═╝   ",
+	"     █████╗ ██████╗ ██╗   ██╗ █████╗ ███╗   ██╗ ██████╗███████╗██████╗ ",
+	"    ██╔══██╗██╔══██╗██║   ██║██╔══██╗████╗  ██║██╔════╝██╔════╝██╔══██╗",
+	"    ███████║██║  ██║██║   ██║███████║██╔██╗ ██║██║     █████╗  ██║  ██║",
+	"    ██╔══██║██║  ██║╚██╗ ██╔╝██╔══██║██║╚██╗██║██║     ██╔══╝  ██║  ██║",
+	"    ██║  ██║██████╔╝ ╚████╔╝ ██║  ██║██║ ╚████║╚██████╗███████╗██████╔╝",
+	"    ╚═╝  ╚═╝╚═════╝   ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝╚══════╝╚═════╝ ",
 	"",
-	"                           ██████╗██╗     ██╗",
-	"                          ██╔════╝██║     ██║",
-	"                          ██║     ██║     ██║",
-	"                          ██║     ██║     ██║",
-	"                          ╚██████╗███████╗██║",
-	"                           ╚═════╝╚══════╝╚═╝",
+	"         ██████╗ ██████╗ ███╗   ██╗████████╗███████╗██╗  ██╗████████╗",
+	"        ██╔════╝██╔═══██╗████╗  ██║╚══██╔══╝██╔════╝╚██╗██╔╝╚══██╔══╝",
+	"        ██║     ██║   ██║██╔██╗ ██║   ██║   █████╗   ╚███╔╝    ██║   ",
+	"        ██║     ██║   ██║██║╚██╗██║   ██║   ██╔══╝   ██╔██╗    ██║   ",
+	"        ╚██████╗╚██████╔╝██║ ╚████║   ██║   ███████╗██╔╝ ██╗   ██║   ",
+	"         ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═╝  ╚═╝   ╚═╝   ",
+	"",
+	"                      ███████╗███╗   ██╗ ██████╗ ██╗███╗   ██╗███████╗",
+	"                      ██╔════╝████╗  ██║██╔════╝ ██║████╗  ██║██╔════╝",
+	"                      █████╗  ██╔██╗ ██║██║  ███╗██║██╔██╗ ██║█████╗  ",
+	"                      ██╔══╝  ██║╚██╗██║██║   ██║██║██║╚██╗██║██╔══╝  ",
+	"                      ███████╗██║ ╚████║╚██████╔╝██║██║ ╚████║███████╗",
+	"                      ╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝╚═╝  ╚═══╝╚══════╝",
 }
 
 type BannerConfig struct {
@@ -70,18 +77,13 @@ func RenderBanner(config BannerConfig) string {
 		Foreground(accentColor).
 		Italic(true)
 
-	subtitleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#6B7280")).
-		Italic(true)
-
 	// Check if terminal is wide enough for full logo
-	logoWidth := 78 // Width of the ASCII art
+	logoWidth := 70 // Width of the new ASCII art
 	if config.Width < logoWidth+4 {
 		// Use compact version for narrow terminals
 		compactLogo := []string{
 			"╔═══════════════════════════════════╗",
-			"║           AI CONTEXT CLI          ║",
-			"║     Advanced Context Engine       ║",
+			"║      Advanced Context Engine      ║",
 			"╚═══════════════════════════════════╝",
 		}
 		
@@ -101,18 +103,19 @@ func RenderBanner(config BannerConfig) string {
 		}
 	}
 
-	// Add subtitle
-	result.WriteString("\n")
-	subtitle := "Advanced Context Engineering for AI Models"
-	centeredSubtitle := centerText(subtitleStyle.Render(subtitle), config.Width)
-	result.WriteString(centeredSubtitle + "\n")
-
-	// Add version if requested
+	// Add version in bottom right if requested
 	if config.ShowVersion {
 		result.WriteString("\n")
-		versionText := fmt.Sprintf("Version %s", version)
-		centeredVersion := centerText(versionStyle.Render(versionText), config.Width)
-		result.WriteString(centeredVersion + "\n")
+		versionText := fmt.Sprintf("%s", version)
+		styledVersion := versionStyle.Render(versionText)
+		// Use lipgloss.Width to account for ANSI codes
+		actualWidth := lipgloss.Width(styledVersion)
+		padding := config.Width - actualWidth
+		if padding < 0 {
+			padding = 0
+		}
+		versionLine := strings.Repeat(" ", padding) + styledVersion
+		result.WriteString(versionLine + "\n")
 	}
 
 	// Add some spacing
