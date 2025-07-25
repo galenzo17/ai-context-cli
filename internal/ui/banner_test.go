@@ -18,7 +18,7 @@ func TestRenderBanner(t *testing.T) {
 		t.Error("Expected banner to return non-empty string")
 	}
 
-	if !strings.Contains(banner, "█████╗") {
+	if !strings.Contains(banner, "▄▀█") {
 		t.Error("Expected banner to contain ASCII art")
 	}
 
