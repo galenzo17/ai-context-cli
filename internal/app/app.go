@@ -12,6 +12,7 @@ import (
 	"ai-context-cli/internal/feedback"
 	"ai-context-cli/internal/folder"
 	"ai-context-cli/internal/navigation"
+	"ai-context-cli/internal/preview"
 )
 
 type MenuItem struct {
@@ -49,6 +50,10 @@ type Model struct {
 	folderBrowser *folder.BrowserModel
 	showingBrowser bool
 	selectedFolder *folder.FolderNode
+	
+	// Context preview system
+	contextPreview *preview.ContextPreviewModel
+	showingPreview bool
 }
 
 // LoadingState represents different loading states
@@ -105,6 +110,12 @@ type FolderSelectedMsg struct {
 
 // FolderBrowserMsg is sent for folder browser events
 type FolderBrowserMsg struct {
+	Type string
+	Data interface{}
+}
+
+// ContextPreviewMsg is sent for context preview events
+type ContextPreviewMsg struct {
 	Type string
 	Data interface{}
 }
@@ -191,6 +202,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case folder.BrowserMsg:
 		// Convert BrowserMsg to FolderBrowserMsg for consistency
 		return m.handleFolderBrowser(FolderBrowserMsg{Type: msg.Type, Data: msg.Data})
+	case ContextPreviewMsg:
+		return m.handleContextPreview(msg)
+	case preview.PreviewMsg:
+		// Convert PreviewMsg to ContextPreviewMsg for consistency
+		return m.handleContextPreview(ContextPreviewMsg{Type: msg.Type, Data: msg.Data})
 	case SimulateOperationMsg:
 		return m.handleSimulateOperation(msg)
 	case ProgressUpdateMsg:
@@ -220,7 +236,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Reset to menu after showing result
 		return m, tea.Batch(toastCmd, m.resetToMenuAfterDelay())
 	case tea.KeyMsg:
-		// Handle folder browser first - it should get all key events when active
+		// Handle context preview first - it should get all key events when active
+		if m.showingPreview && m.contextPreview != nil {
+			preview, cmd := m.contextPreview.Update(msg)
+			m.contextPreview = preview
+			
+			// Execute the command and handle any returned messages
+			if cmd != nil {
+				var newCmds []tea.Cmd
+				newCmds = append(newCmds, cmd)
+				return m, tea.Batch(newCmds...)
+			}
+			return m, nil
+		}
+		
+		// Handle folder browser second - it should get all key events when active
 		if m.showingBrowser && m.folderBrowser != nil {
 			browser, cmd := m.folderBrowser.Update(msg)
 			m.folderBrowser = browser
@@ -247,6 +277,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.showingHelp {
 				m.showingHelp = false
 				m.helpForItem = -1
+				return m, nil
+			}
+			
+			// Handle context preview close
+			if m.showingPreview {
+				m.showingPreview = false
+				m.contextPreview = nil
 				return m, nil
 			}
 			
@@ -431,6 +468,31 @@ func (m Model) handleFolderBrowser(msg FolderBrowserMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleContextPreview handles context preview events
+func (m Model) handleContextPreview(msg ContextPreviewMsg) (Model, tea.Cmd) {
+	switch msg.Type {
+	case "save_requested":
+		if _, ok := msg.Data.(*context.ContextResult); ok {
+			// Handle context save
+			toastManager, toastCmd := m.toastManager.AddToast("Context saved successfully", feedback.ToastSuccess)
+			m.toastManager = toastManager
+			return m, toastCmd
+		}
+	case "refresh_requested":
+		// Handle context refresh
+		toastManager, toastCmd := m.toastManager.AddToast("Context refreshed", feedback.ToastInfo)
+		m.toastManager = toastManager
+		return m, toastCmd
+	case "template_applied":
+		// Handle template application
+		toastManager, toastCmd := m.toastManager.AddToast("Template applied successfully", feedback.ToastSuccess)
+		m.toastManager = toastManager
+		return m, toastCmd
+	}
+	
+	return m, nil
+}
+
 // startProjectScan starts a real project scan
 func (m Model) startProjectScan() tea.Cmd {
 	return func() tea.Msg {
@@ -543,12 +605,22 @@ func (m Model) handleMenuAction(index int) (Model, tea.Cmd) {
 		// Navigate to Context Preview screen
 		m.navStack = m.navStack.Push(navigation.ContextPreviewScreen)
 		m.currentScreen = "context_preview"
-		m.loadingState = StateProcessing
-		m.spinner = m.spinner.SetMessage("Preparing context preview...").Start()
-		return m, tea.Batch(
-			m.spinner.InitSpinner(),
-			m.simulateContextPreview(),
-		)
+		
+		// Check if we have context to preview
+		if m.contextResult == nil {
+			toastManager, toastCmd := m.toastManager.AddToast(
+				"No context available. Please scan files first.", feedback.ToastWarning)
+			m.toastManager = toastManager
+			return m, toastCmd
+		}
+		
+		// Initialize context preview
+		contextPreview := preview.NewContextPreviewModel(m.contextResult, m.scanResult)
+		m.contextPreview = contextPreview
+		m.showingPreview = true
+		m.showingResult = false
+		
+		return m, nil
 	case 3: // Select Model
 		// Navigate to Model Selection screen
 		m.navStack = m.navStack.Push(navigation.ModelSelectionScreen)
@@ -740,6 +812,11 @@ func (m Model) View() string {
 		result.WriteString("\n\n")
 		
 		return result.String()
+	}
+	
+	// Show context preview if active
+	if m.showingPreview && m.contextPreview != nil {
+		return result.String() + m.contextPreview.View()
 	}
 	
 	// Show folder browser if active
