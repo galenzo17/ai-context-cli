@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"ai-context-cli/internal/context"
 	"ai-context-cli/internal/feedback"
+	"ai-context-cli/internal/folder"
 	"ai-context-cli/internal/navigation"
 )
 
@@ -43,6 +44,11 @@ type Model struct {
 	scanResult   *context.ScanResult
 	contextResult *context.ContextResult
 	showingResult bool
+	
+	// Folder browser system
+	folderBrowser *folder.BrowserModel
+	showingBrowser bool
+	selectedFolder *folder.FolderNode
 }
 
 // LoadingState represents different loading states
@@ -90,6 +96,17 @@ type ScanCompleteMsg struct {
 type ContextGeneratedMsg struct {
 	Result *context.ContextResult
 	Error  error
+}
+
+// FolderSelectedMsg is sent when a folder is selected
+type FolderSelectedMsg struct {
+	Folder *folder.FolderNode
+}
+
+// FolderBrowserMsg is sent for folder browser events
+type FolderBrowserMsg struct {
+	Type string
+	Data interface{}
 }
 
 func NewModel() Model {
@@ -167,6 +184,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleScanComplete(msg)
 	case ContextGeneratedMsg:
 		return m.handleContextGenerated(msg)
+	case FolderSelectedMsg:
+		return m.handleFolderSelected(msg)
+	case FolderBrowserMsg:
+		return m.handleFolderBrowser(msg)
+	case folder.BrowserMsg:
+		// Convert BrowserMsg to FolderBrowserMsg for consistency
+		return m.handleFolderBrowser(FolderBrowserMsg{Type: msg.Type, Data: msg.Data})
 	case SimulateOperationMsg:
 		return m.handleSimulateOperation(msg)
 	case ProgressUpdateMsg:
@@ -196,6 +220,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Reset to menu after showing result
 		return m, tea.Batch(toastCmd, m.resetToMenuAfterDelay())
 	case tea.KeyMsg:
+		// Handle folder browser first - it should get all key events when active
+		if m.showingBrowser && m.folderBrowser != nil {
+			browser, cmd := m.folderBrowser.Update(msg)
+			m.folderBrowser = browser
+			
+			// Execute the command and handle any returned messages
+			if cmd != nil {
+				var newCmds []tea.Cmd
+				newCmds = append(newCmds, cmd)
+				return m, tea.Batch(newCmds...)
+			}
+			return m, nil
+		}
+		
 		switch msg.String() {
 		case "ctrl+c", "q":
 			if m.showingHelp {
@@ -209,6 +247,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.showingHelp {
 				m.showingHelp = false
 				m.helpForItem = -1
+				return m, nil
+			}
+			
+			// Handle folder browser close
+			if m.showingBrowser {
+				m.showingBrowser = false
+				m.folderBrowser = nil
 				return m, nil
 			}
 			
@@ -346,6 +391,46 @@ func (m Model) handleContextGenerated(msg ContextGeneratedMsg) (Model, tea.Cmd) 
 	return m, toastCmd
 }
 
+// handleFolderSelected handles folder selection from browser
+func (m Model) handleFolderSelected(msg FolderSelectedMsg) (Model, tea.Cmd) {
+	m.selectedFolder = msg.Folder
+	m.showingBrowser = false
+	m.folderBrowser = nil
+	
+	if msg.Folder == nil {
+		toastManager, toastCmd := m.toastManager.AddToast("No folder selected", feedback.ToastWarning)
+		m.toastManager = toastManager
+		return m, toastCmd
+	}
+	
+	// Start folder scanning
+	m.loadingState = StateScanning
+	m.spinner = m.spinner.SetMessage(fmt.Sprintf("Scanning folder '%s'...", msg.Folder.Name)).Start()
+	m.progress = feedback.NewProgress(0, "Scanning folder files")
+	
+	toastManager, toastCmd := m.toastManager.AddToast(
+		fmt.Sprintf("Selected folder: %s", msg.Folder.Name), feedback.ToastInfo)
+	m.toastManager = toastManager
+	
+	return m, tea.Batch(
+		toastCmd,
+		m.spinner.InitSpinner(),
+		m.startFolderScan(msg.Folder.Path),
+	)
+}
+
+// handleFolderBrowser handles folder browser events
+func (m Model) handleFolderBrowser(msg FolderBrowserMsg) (Model, tea.Cmd) {
+	switch msg.Type {
+	case "folder_selected":
+		if node, ok := msg.Data.(*folder.FolderNode); ok {
+			return m.handleFolderSelected(FolderSelectedMsg{Folder: node})
+		}
+	}
+	
+	return m, nil
+}
+
 // startProjectScan starts a real project scan
 func (m Model) startProjectScan() tea.Cmd {
 	return func() tea.Msg {
@@ -428,16 +513,32 @@ func (m Model) handleMenuAction(index int) (Model, tea.Cmd) {
 			m.startProjectScan(),
 		)
 	case 1: // Add Context (Folder)
-		// Navigate to Add Context Folder screen
+		// Navigate to Add Context Folder screen and open browser
 		m.navStack = m.navStack.Push(navigation.AddContextFolderScreen)
 		m.currentScreen = "add_context_folder"
-		m.loadingState = StateScanning
-		m.spinner = m.spinner.SetMessage("Selecting folder...").Start()
-		m.progress = feedback.NewProgress(50, "Adding context to folder")
-		return m, tea.Batch(
-			m.spinner.InitSpinner(),
-			m.simulateFolderSelection(),
-		)
+		
+		// Initialize folder browser
+		wd, err := os.Getwd()
+		if err != nil {
+			toastManager, toastCmd := m.toastManager.AddToast(
+				fmt.Sprintf("Error getting current directory: %v", err), feedback.ToastError)
+			m.toastManager = toastManager
+			return m, toastCmd
+		}
+		
+		browser, err := folder.NewBrowserModel(wd)
+		if err != nil {
+			toastManager, toastCmd := m.toastManager.AddToast(
+				fmt.Sprintf("Error initializing folder browser: %v", err), feedback.ToastError)
+			m.toastManager = toastManager
+			return m, toastCmd
+		}
+		
+		m.folderBrowser = browser
+		m.showingBrowser = true
+		m.showingResult = false
+		
+		return m, nil
 	case 2: // Context Before
 		// Navigate to Context Preview screen
 		m.navStack = m.navStack.Push(navigation.ContextPreviewScreen)
@@ -639,6 +740,11 @@ func (m Model) View() string {
 		result.WriteString("\n\n")
 		
 		return result.String()
+	}
+	
+	// Show folder browser if active
+	if m.showingBrowser && m.folderBrowser != nil {
+		return result.String() + m.folderBrowser.View()
 	}
 	
 	// Show result view if available
