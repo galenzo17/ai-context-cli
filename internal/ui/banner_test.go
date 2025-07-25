@@ -18,8 +18,8 @@ func TestRenderBanner(t *testing.T) {
 		t.Error("Expected banner to return non-empty string")
 	}
 
-	if !strings.Contains(banner, "▄▀█") {
-		t.Error("Expected banner to contain ASCII art")
+	if !strings.Contains(banner, "CONTEXT ENGINE") {
+		t.Error("Expected banner to contain title")
 	}
 
 	if !strings.Contains(banner, "v0.1.0") {
@@ -29,7 +29,7 @@ func TestRenderBanner(t *testing.T) {
 
 func TestRenderBannerCompact(t *testing.T) {
 	config := BannerConfig{
-		Width:       60, // Narrow terminal
+		Width:       50, // Very narrow terminal to trigger compact mode
 		ShowVersion: false,
 		ColorScheme: "default",
 	}
@@ -41,7 +41,7 @@ func TestRenderBannerCompact(t *testing.T) {
 	}
 
 	// Should use compact layout for narrow terminals
-	if !strings.Contains(banner, "Advanced Context Engine") {
+	if !strings.Contains(banner, "Context Engine") {
 		t.Error("Expected compact banner to contain title")
 	}
 }

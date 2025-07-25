@@ -11,8 +11,11 @@ import (
 const version = "v0.1.0"
 
 var logoArt = []string{
-	"▄▀█ █▀▄ █▀█ █▀█ █▄ █ █▀▀ █▀▀ █▀▄   █▀▀ █▀█ █▄ █ ▀█▀ █▀▀ ▀▄▀ ▀█▀   █▀▀ █▄ █ █▀█ █ █▄ █ █▀▀",
-	"█▀█ █▄▀ ▀▀█ █▀█ █ ▀█ █▄▄ █▄▄ █▄▀   █▄▄ █▄█ █ ▀█  █  █▄▄ █▀█  █    █▄▄ █ ▀█ █▄█ █ █ ▀█ █▄▄",
+	"╔═══════════════════════════════════════════════════╗",
+	"║                                                   ║",
+	"║                 CONTEXT ENGINE                    ║",
+	"║                                                   ║",
+	"╚═══════════════════════════════════════════════════╝",
 }
 
 type BannerConfig struct {
@@ -60,13 +63,13 @@ func RenderBanner(config BannerConfig) string {
 		Italic(true)
 
 	// Check if terminal is wide enough for full logo
-	logoWidth := 89 // Width of the new single-line ASCII art
+	logoWidth := 55 // Width of the boxed design
 	if config.Width < logoWidth+4 {
 		// Use compact version for narrow terminals
 		compactLogo := []string{
-			"╔═══════════════════════════════════╗",
-			"║      Advanced Context Engine      ║",
-			"╚═══════════════════════════════════╝",
+			"╔═══════════════════════════╗",
+			"║      Context Engine       ║",
+			"╚═══════════════════════════╝",
 		}
 		
 		for _, line := range compactLogo {
