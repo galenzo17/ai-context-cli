@@ -11,6 +11,7 @@ import (
 	"ai-context-cli/internal/context"
 	"ai-context-cli/internal/feedback"
 	"ai-context-cli/internal/folder"
+	"ai-context-cli/internal/models"
 	"ai-context-cli/internal/navigation"
 	"ai-context-cli/internal/preview"
 )
@@ -54,6 +55,10 @@ type Model struct {
 	// Context preview system
 	contextPreview *preview.ContextPreviewModel
 	showingPreview bool
+	
+	// Model selection system
+	modelSelector *models.SelectorModel
+	showingModelSelector bool
 }
 
 // LoadingState represents different loading states
@@ -143,9 +148,9 @@ func NewModel() Model {
 			},
 			{
 				Title:       "🤖 Select AI Model",
-				Description: "Choose and configure AI model settings",
+				Description: "Configure and test AI model connections",
 				Icon:        "🤖",
-				DetailHelp:  "Select from available AI models (GPT-4, Claude, etc.), configure API keys, and adjust model-specific settings like temperature and max tokens.",
+				DetailHelp:  "Choose from available AI models, configure API settings, test connections, and manage model preferences. Supports OpenAI, Anthropic, Google, and local models.",
 			},
 			{
 				Title:       "🚪 Exit",
@@ -264,6 +269,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		
+		// Handle model selector third - priority key handling
+		if m.showingModelSelector && m.modelSelector != nil {
+			selector, cmd := m.modelSelector.Update(msg)
+			m.modelSelector = selector
+			
+			// Execute the command and handle any returned messages
+			if cmd != nil {
+				var newCmds []tea.Cmd
+				newCmds = append(newCmds, cmd)
+				return m, tea.Batch(newCmds...)
+			}
+			return m, nil
+		}
+		
 		switch msg.String() {
 		case "ctrl+c", "q":
 			if m.showingHelp {
@@ -291,6 +310,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.showingBrowser {
 				m.showingBrowser = false
 				m.folderBrowser = nil
+				return m, nil
+			}
+			
+			// Handle model selector close
+			if m.showingModelSelector {
+				m.showingModelSelector = false
+				m.modelSelector = nil
 				return m, nil
 			}
 			
@@ -630,12 +656,13 @@ func (m Model) handleMenuAction(index int) (Model, tea.Cmd) {
 		// Navigate to Model Selection screen
 		m.navStack = m.navStack.Push(navigation.ModelSelectionScreen)
 		m.currentScreen = "model_selection"
-		m.loadingState = StateProcessing
-		m.spinner = m.spinner.SetMessage("Loading available models...").Start()
-		return m, tea.Batch(
-			m.spinner.InitSpinner(),
-			m.simulateModelLoading(),
-		)
+		
+		// Initialize model selector
+		modelSelector := models.NewSelectorModel()
+		m.modelSelector = modelSelector
+		m.showingModelSelector = true
+		
+		return m, nil
 	default:
 		return m, nil
 	}
@@ -829,6 +856,11 @@ func (m Model) View() string {
 		return result.String() + m.folderBrowser.View()
 	}
 	
+	// Show model selector if active
+	if m.showingModelSelector && m.modelSelector != nil {
+		return result.String() + m.modelSelector.View()
+	}
+	
 	// Show result view if available
 	if m.showingResult && m.contextResult != nil {
 		return result.String() + m.renderResultView()
@@ -845,25 +877,6 @@ func (m Model) View() string {
 // renderLoadingView renders the loading interface
 func (m Model) renderLoadingView() string {
 	var result strings.Builder
-	
-	// Compact banner
-	bannerStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#7D56F4")).
-		Align(lipgloss.Center)
-	
-	compactBanner := []string{
-		"╔═══════════════════════════╗",
-		"║      Context Engine       ║", 
-		"╚═══════════════════════════╝",
-	}
-	
-	for _, line := range compactBanner {
-		centeredLine := centerText(bannerStyle.Render(line), 100)
-		result.WriteString(centeredLine)
-		result.WriteString("\n")
-	}
-	result.WriteString("\n")
 	
 	// Show spinner if active
 	if spinnerView := m.spinner.View(); spinnerView != "" {
@@ -899,25 +912,6 @@ func (m Model) renderLoadingView() string {
 func (m Model) renderBaseView() string {
 	var result strings.Builder
 	
-	// Compact banner
-	bannerStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#7D56F4")).
-		Align(lipgloss.Center)
-	
-	compactBanner := []string{
-		"╔═══════════════════════════╗",
-		"║      Context Engine       ║", 
-		"╚═══════════════════════════╝",
-	}
-	
-	for _, line := range compactBanner {
-		centeredLine := centerText(bannerStyle.Render(line), 100)
-		result.WriteString(centeredLine)
-		result.WriteString("\n")
-	}
-	result.WriteString("\n") // Single line spacing after banner
-	
 	// Create buttons layout
 	for i, item := range m.menuItems {
 		isSelected := i == m.cursor
@@ -949,25 +943,6 @@ func (m Model) renderBaseView() string {
 // renderResultView renders the context generation results
 func (m Model) renderResultView() string {
 	var result strings.Builder
-	
-	// Compact banner
-	bannerStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#7D56F4")).
-		Align(lipgloss.Center)
-	
-	compactBanner := []string{
-		"╔═══════════════════════════╗",
-		"║      Context Engine       ║", 
-		"╚═══════════════════════════╝",
-	}
-	
-	for _, line := range compactBanner {
-		centeredLine := centerText(bannerStyle.Render(line), 100)
-		result.WriteString(centeredLine)
-		result.WriteString("\n")
-	}
-	result.WriteString("\n")
 	
 	// Context Results Title
 	titleStyle := lipgloss.NewStyle().
