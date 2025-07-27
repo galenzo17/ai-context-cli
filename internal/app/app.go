@@ -878,25 +878,6 @@ func (m Model) View() string {
 func (m Model) renderLoadingView() string {
 	var result strings.Builder
 	
-	// Compact banner
-	bannerStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#7D56F4")).
-		Align(lipgloss.Center)
-	
-	compactBanner := []string{
-		"╔═══════════════════════════╗",
-		"║      Context Engine       ║", 
-		"╚═══════════════════════════╝",
-	}
-	
-	for _, line := range compactBanner {
-		centeredLine := centerText(bannerStyle.Render(line), 100)
-		result.WriteString(centeredLine)
-		result.WriteString("\n")
-	}
-	result.WriteString("\n")
-	
 	// Show spinner if active
 	if spinnerView := m.spinner.View(); spinnerView != "" {
 		centeredSpinner := centerText(spinnerView, 100)
@@ -931,25 +912,6 @@ func (m Model) renderLoadingView() string {
 func (m Model) renderBaseView() string {
 	var result strings.Builder
 	
-	// Compact banner
-	bannerStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#7D56F4")).
-		Align(lipgloss.Center)
-	
-	compactBanner := []string{
-		"╔═══════════════════════════╗",
-		"║      Context Engine       ║", 
-		"╚═══════════════════════════╝",
-	}
-	
-	for _, line := range compactBanner {
-		centeredLine := centerText(bannerStyle.Render(line), 100)
-		result.WriteString(centeredLine)
-		result.WriteString("\n")
-	}
-	result.WriteString("\n") // Single line spacing after banner
-	
 	// Create buttons layout
 	for i, item := range m.menuItems {
 		isSelected := i == m.cursor
@@ -981,25 +943,6 @@ func (m Model) renderBaseView() string {
 // renderResultView renders the context generation results
 func (m Model) renderResultView() string {
 	var result strings.Builder
-	
-	// Compact banner
-	bannerStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#7D56F4")).
-		Align(lipgloss.Center)
-	
-	compactBanner := []string{
-		"╔═══════════════════════════╗",
-		"║      Context Engine       ║", 
-		"╚═══════════════════════════╝",
-	}
-	
-	for _, line := range compactBanner {
-		centeredLine := centerText(bannerStyle.Render(line), 100)
-		result.WriteString(centeredLine)
-		result.WriteString("\n")
-	}
-	result.WriteString("\n")
 	
 	// Context Results Title
 	titleStyle := lipgloss.NewStyle().
